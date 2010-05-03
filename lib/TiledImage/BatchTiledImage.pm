@@ -45,7 +45,7 @@ sub new {
     $self->{'tileWidth'} = 1000 unless defined $self->{'tileWidth'};   # default tile width
     $self->{'renderWidth'} = 100000 unless defined $self->{'renderWidth'};  # default render width
     $self->{'firstTile'} = 0 unless defined $self->{'firstTile'};
-    $self->{'lastTile'} = $self->width / $self->tileWidth unless defined $self->{'lastTile'};
+    $self->{'lastTile'} = $self->width / $self->{'tileWidth'} unless defined $self->{'lastTile'};
     $self->{'tilePrefix'} = 'TILE' unless defined $self->{'tilePrefix'};  # default tile prefix
     $self->{'annotate'} = 0 unless defined $self->{'annotate'}; 
     $self->{'htmlOutdir'} = '' unless defined $self->{'htmlOutdir'}; 

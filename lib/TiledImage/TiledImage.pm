@@ -290,7 +290,8 @@ sub finish {
 sub new {
     my ($class, %args) = @_;
     my %allowed_args = map {$_ => 1} qw (-primdb -tiledimage_name -width -height -persistent -verbose -tile_width_hint);
-    my @required_args = qw (-tiledimage_name);
+    my @required_args;
+    push @required_args, qw (-tiledimage_name) if exists $args{'-primdb'};
 
     foreach my $arg (keys %args) {
       unless ($allowed_args{$arg}) {
