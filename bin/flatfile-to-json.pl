@@ -13,7 +13,13 @@ use Bio::FeatureIO;
 use JsonGenerator;
 use JSON 2;
 
-my ($gff, $gff2, $bed,
+my $hasSamTools = 1;
+eval { require Bio::DB::Sam; };
+if ($@) {
+    $hasSamTools = 0;
+}
+
+my ($gff, $gff2, $bed, $bam,
     $trackLabel, $key,
     $urlTemplate, $subfeatureClasses, $arrowheadClass, $clientConfig, 
     $thinType, $thickType,
@@ -21,10 +27,12 @@ my ($gff, $gff2, $bed,
 my $autocomplete = "none";
 my $outdir = "data";
 my $cssClass = "feature";
+my $nclChunk = 1000;
 my ($getType, $getPhase, $getSubs, $getLabel) = (0, 0, 0, 0);
 GetOptions("gff=s" => \$gff,
            "gff2=s" => \$gff2,
            "bed=s" => \$bed,
+           "bam=s" => \$bam,
 	   "out=s" => \$outdir,
 	   "tracklabel=s" => \$trackLabel,
 	   "key=s" => \$key,
@@ -40,12 +48,17 @@ GetOptions("gff=s" => \$gff,
            "clientConfig=s" => \$clientConfig,
            "thinType=s" => \$thinType,
            "thicktype=s" => \$thickType,
-           "type=s@" => \$types);
+           "type=s@" => \$types,
+           "nclChunk=i" => \$nclChunk);
 my $trackDir = "$outdir/tracks";
 
-if (!(defined($gff) || defined($gff2) || defined($bed))) {
+if (!(defined($gff) || defined($gff2) || defined($bed) || defined($bam)) || !defined($trackLabel)) {
+    print "The --tracklabel parameter is required\n"
+        unless defined($trackLabel);
+    print "You must supply either a --gff, -gff2, --bed, or --bam parameter\n"
+        unless (defined($gff) || defined($gff2) || defined($bed) || defined($bam));
     print <<USAGE;
-USAGE: $0 [--gff <gff3 file> | --gff2 <gff2 file> | --bed <bed file>] [--out <output directory>] --tracklabel <track identifier> --key <human-readable track name> [--cssclass <CSS class for displaying features>] [--autocomplete none|label|alias|all] [--getType] [--getPhase] [--getSubs] [--getLabel] [--urltemplate "http://example.com/idlookup?id={id}"] [--subfeatureClasses <JSON-syntax subfeature class map>] [--clientConfig <JSON-syntax extra configuration for FeatureTrack>]
+USAGE: $0 [--gff <gff3 file> | --gff2 <gff2 file> | --bed <bed file> | --bam <bam file>] [--out <output directory>] --tracklabel <track identifier> --key <human-readable track name> [--cssclass <CSS class for displaying features>] [--autocomplete none|label|alias|all] [--getType] [--getPhase] [--getSubs] [--getLabel] [--urltemplate "http://example.com/idlookup?id={id}"] [--subfeatureClasses <JSON-syntax subfeature class map>] [--clientConfig <JSON-syntax extra configuration for FeatureTrack>]
 
     --out: defaults to "data"
     --cssclass: defaults to "feature"
@@ -61,6 +74,7 @@ USAGE: $0 [--gff <gff3 file> | --gff2 <gff2 file> | --bed <bed file>] [--out <ou
     --clientConfig: extra configuration for the client, in JSON syntax
         e.g. '{"css": "background-color: black;", "histScale": 5}'
     --type: only process features of the given type
+    --nclChunk: NCList chunk size; if you get "json text or perl structure exceeds maximum nesting level" errors, try setting this lower (default: $nclChunk)
 USAGE
 exit(1);
 }
@@ -85,6 +99,7 @@ my $idSub = sub {
 };
 
 my $streaming = 0;
+my $shareSubs = 0;
 my ($db, $stream);
 if ($gff) {
     $db = Bio::DB::SeqFeature::Store->new(-adaptor => 'memory',
@@ -97,12 +112,18 @@ if ($gff) {
                                   ($thinType ? ("-thin_type" => $thinType) : ()),
                                   ($thickType ? ("-thick_type" => $thickType) : ()) );
     $streaming = 1;
+    $shareSubs = 1;
     $labelSub = sub {
         #label sub for features returned by Bio::FeatureIO::bed
         return $_[0]->name;
     };
+} elsif ($bam){
+    if (! $hasSamTools) {
+        die "install Bio::DB::Sam in order to use BAM files";
+    }
+    $db = Bio::DB::Sam->new('-bam' => $bam);
 } else {
-    die "please specify -gff, -gff2, or -bed";
+    die "please specify -gff, -gff2, -bed or -bam";
 }
 
 mkdir($outdir) unless (-d $outdir);
@@ -120,6 +141,10 @@ my %style = ("autocomplete" => $autocomplete,
              "arrowheadClass" => $arrowheadClass,
              "clientConfig" => $clientConfig);
 
+if ($bam) {
+    $style{noId} = 1;
+}
+
 $style{subfeature_classes} = JSON::from_json($subfeatureClasses)
     if defined($subfeatureClasses);
 
@@ -131,7 +156,7 @@ foreach my $seqInfo (@refSeqs) {
     $perChromGens{$seqInfo->{"name"}} = JsonGenerator->new($trackLabel,
                                                            $seqInfo->{"name"},
                                                            \%style, [], [],
-                                                           $streaming);
+                                                           $shareSubs);
 }
 
 if ($streaming) {
@@ -160,15 +185,21 @@ foreach my $seqInfo (@refSeqs) {
             @queryArgs = (@queryArgs, "-types" => $types);
         }
 
-        my @features = $db->features(@queryArgs);
+        if ($bam) {
+            $db->fetch($seqName, sub {$jsonGen->addFeature($_[0])});
+        } else {
+            my @features = $db->features(@queryArgs);
 
-        $jsonGen->addFeature($_) foreach (@features);
+            $jsonGen->addFeature($_) foreach (@features);
+        }
     }
     next if $jsonGen->featureCount == 0;
 
     print $seqName . "\t" . $jsonGen->featureCount . "\n";
 
-    $jsonGen->generateTrack("$trackDir/$seqName/$trackLabel/", 5000);
+    $jsonGen->generateTrack("$trackDir/$seqName/$trackLabel/", 1000, $nclChunk, $seqInfo->{"start"}, $seqInfo->{"end"});
+
+    delete $perChromGens{$seqName};
 }
 
 JsonGenerator::modifyJSFile("$outdir/trackInfo.js", "trackInfo",

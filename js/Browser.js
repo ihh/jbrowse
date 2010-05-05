@@ -285,7 +285,8 @@ Browser.prototype.createTrackList = function(parent, params) {
  * @private
  */
 Browser.prototype.onVisibleTracksChanged = function() {
-    var trackLabels = dojo.map(this.view.trackList(),
+    this.view.updateTrackList();
+    var trackLabels = dojo.map(this.view.tracks,
                                function(track) { return track.name; });
     dojo.cookie(this.container.id + "-tracks",
                 trackLabels.join(","),
@@ -476,7 +477,7 @@ Browser.prototype.visibleRegion = function() {
  * (suitable for passing to showTracks)
  */
 Browser.prototype.visibleTracks = function() {
-    var trackLabels = dojo.map(this.view.trackList(),
+    var trackLabels = dojo.map(this.view.tracks,
                                function(track) { return track.name; });
     return trackLabels.join(",");
 };
