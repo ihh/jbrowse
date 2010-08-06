@@ -113,7 +113,8 @@ my %style = ("autocomplete" => $autocomplete,
              "phase"        => $getPhase,
              "subfeatures"  => $getSubs,
              "class"        => $cssClass,
-             "label"        => $getLabel ? $labelSub : 0,
+             "label"        => ($getLabel || ($autocomplete ne "none")) ?
+                                $labelSub : 0,
              "idSub"        => $idSub,
              "key"          => defined($key) ? $key : $trackLabel,
              "urlTemplate"  => $urlTemplate,
@@ -136,7 +137,6 @@ foreach my $seqInfo (@refSeqs) {
 
 if ($streaming) {
     my $jsonGen;
-
     while (my $feat = $stream->next_feature()) {
         $jsonGen = $perChromGens{$feat->seq_id};
 
