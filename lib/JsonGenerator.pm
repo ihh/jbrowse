@@ -245,6 +245,8 @@ sub new {
 sub addFeature {
     my ($self, $feature) = @_;
 
+    return unless defined($feature->start);
+
     if ($self->{getLabel} || $self->{getAlias}) {
         push @{$self->{names}}, [map {$_->($feature)} @{$self->{nameMap}}];
     }
